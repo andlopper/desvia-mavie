@@ -11,7 +11,6 @@
   const bestValue = document.querySelector('#best-value');
   const levelValue = document.querySelector('#level-value');
   const threatDots = document.querySelector('#threat-dots');
-  const soundButton = document.querySelector('#sound-button');
   const overlayTitle = document.querySelector('#overlay-title');
   const overlayCopy = document.querySelector('#overlay-copy');
   const overlayEyebrow = document.querySelector('#overlay-eyebrow');
@@ -50,9 +49,12 @@
   let spawnClock = 0;
   let lastFrame = 0;
   let ballId = 0;
-  let soundOn = false;
-  let audioContext = null;
   let pointerActive = false;
+  let pointerStartX = 0;
+  let pointerStartY = 0;
+  let pointerMoved = false;
+  let pointerDucking = false;
+  let swipeDuckUntil = 0;
   let shake = 0;
   let best = readBest();
   let lastPassMessage = '';
@@ -105,21 +107,24 @@
     player.jumpPrep = 0;
     player.jumpPending = false;
     player.ducking = false;
+    swipeDuckUntil = 0;
     speechTime = 0;
     speechBubble.classList.remove('is-visible');
     gameTitle.textContent = GAME_TITLE;
     overlayEyebrow.hidden = true;
     state = 'playing';
     overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
     updateHud();
     lastFrame = performance.now();
     requestAnimationFrame(frame);
-    playTone(520, .07, 'sine');
   }
 
   function endGame() {
     if (state !== 'playing') return;
     state = 'over';
+    overlay.classList.remove('hidden');
+    overlay.setAttribute('aria-hidden', 'false');
     shake = 10;
     burst(player.x + 25, groundY - 48, '#f8ecce', 15);
     const isNewBest = elapsed > best;
@@ -133,13 +138,10 @@
     const hitMessage = randomMessage(hitMessages, lastHitMessage);
     lastHitMessage = hitMessage;
     overlayTitle.textContent = hitMessage;
-    gameTitle.textContent = hitMessage;
     speechTime = 0;
     speechBubble.classList.remove('is-visible');
     overlayCopy.textContent = `Você protegeu a Mavie por ${formatTime(elapsed)}. Respira, ajeita a camisa e tenta de novo.`;
     startButton.innerHTML = 'Jogar de novo <span aria-hidden="true">↻</span>';
-    overlay.classList.remove('hidden');
-    playTone(180, .22, 'triangle');
   }
 
   function spawnBall() {
@@ -197,7 +199,6 @@
     if (state !== 'playing' || player.jumpHeight > 0 || player.jumpPending || player.ducking) return;
     player.jumpPending = true;
     player.jumpPrep = JUMP_PREP_DURATION;
-    playTone(430, .06, 'sine');
   }
 
   function intersectsBall(ball) {
@@ -276,8 +277,8 @@
     elapsed += dt;
     const previousPlayerX = player.x;
     let direction = 0;
-    if (keys.has('ArrowLeft') || keys.has('a')) direction -= 1;
-    if (keys.has('ArrowRight') || keys.has('d')) direction += 1;
+    if (keys.has('arrowleft') || keys.has('a')) direction -= 1;
+    if (keys.has('arrowright') || keys.has('d')) direction += 1;
     if (direction) player.targetX = clamp(player.targetX + direction * player.speed * dt, 68, W - 140);
     player.x += (player.targetX - player.x) * Math.min(1, dt * 13);
     if (speechTime > 0) {
@@ -285,7 +286,8 @@
       if (!speechTime) speechBubble.classList.remove('is-visible');
       else positionSpeechLine();
     }
-    player.ducking = player.jumpHeight === 0 && !player.jumpPending && (keys.has('ArrowDown') || keys.has('s'));
+    player.ducking = player.jumpHeight === 0 && !player.jumpPending
+      && (keys.has('arrowdown') || keys.has('s') || performance.now() < swipeDuckUntil);
     if (player.jumpPending) {
       player.jumpPrep -= dt;
       if (player.jumpPrep <= 0) {
@@ -588,20 +590,6 @@
     ctx.globalAlpha = 1;
   }
 
-  function playTone(frequency, duration, type) {
-    if (!soundOn) return;
-    try {
-      audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator = audioContext.createOscillator();
-      const gain = audioContext.createGain();
-      oscillator.type = type; oscillator.frequency.value = frequency;
-      gain.gain.setValueAtTime(.07, audioContext.currentTime);
-      gain.gain.exponentialRampToValueAtTime(.001, audioContext.currentTime + duration);
-      oscillator.connect(gain); gain.connect(audioContext.destination);
-      oscillator.start(); oscillator.stop(audioContext.currentTime + duration);
-    } catch { /* Audio is optional; gameplay must work without it. */ }
-  }
-
   startButton.addEventListener('click', startGame);
   window.addEventListener('resize', resize);
   window.visualViewport?.addEventListener('resize', resize);
@@ -617,10 +605,41 @@
   });
   window.addEventListener('keyup', (event) => keys.delete(event.key.toLowerCase()));
   window.addEventListener('blur', () => keys.clear());
-  canvas.addEventListener('pointerdown', (event) => { pointerActive = true; canvas.setPointerCapture(event.pointerId); moveToPointer(event); });
-  canvas.addEventListener('pointermove', (event) => { if (pointerActive) moveToPointer(event); });
-  canvas.addEventListener('pointerup', () => { pointerActive = false; });
-  canvas.addEventListener('pointercancel', () => { pointerActive = false; });
+  canvas.addEventListener('pointerdown', (event) => {
+    if (state !== 'playing') return;
+    pointerActive = true;
+    pointerMoved = false;
+    pointerDucking = false;
+    pointerStartX = event.clientX;
+    pointerStartY = event.clientY;
+    canvas.setPointerCapture(event.pointerId);
+    moveToPointer(event);
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!pointerActive) return;
+    const deltaX = event.clientX - pointerStartX;
+    const deltaY = event.clientY - pointerStartY;
+    if (Math.abs(deltaX) > 12) pointerMoved = true;
+    if (!pointerDucking && Math.abs(deltaY) > 28 && Math.abs(deltaY) > Math.abs(deltaX) * 1.15) {
+      pointerDucking = true;
+      pointerMoved = true;
+      if (deltaY > 0) {
+        swipeDuckUntil = performance.now() + 650;
+        keys.add('arrowdown');
+      } else {
+        jump();
+      }
+    }
+    if (!pointerDucking) moveToPointer(event);
+  });
+  const finishCanvasPointer = () => {
+    if (!pointerActive) return;
+    pointerActive = false;
+    if (pointerDucking) keys.delete('arrowdown');
+    else if (!pointerMoved) jump();
+  };
+  canvas.addEventListener('pointerup', finishCanvasPointer);
+  canvas.addEventListener('pointercancel', finishCanvasPointer);
   document.querySelectorAll('.move-button').forEach((button) => {
     const action = button.dataset.action;
     const direction = Number(button.dataset.direction);
@@ -632,14 +651,6 @@
     button.addEventListener('pointercancel', up);
     button.addEventListener('pointerleave', up);
   });
-  soundButton.addEventListener('click', () => {
-    soundOn = !soundOn;
-    soundButton.setAttribute('aria-pressed', String(soundOn));
-    soundButton.setAttribute('aria-label', soundOn ? 'Desativar sons' : 'Ativar sons');
-    soundButton.querySelector('span').textContent = soundOn ? 'Som ligado' : 'Som desligado';
-    if (soundOn) playTone(620, .08, 'sine');
-  });
-
   updateHud();
   resize();
 })();

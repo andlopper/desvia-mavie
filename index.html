@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#102d25" />
     <meta name="description" content="Proteja o bebê e desvie das bolas neste jogo de futebol cartunesco." />
     <title>Desvia, Mavie!</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=16" />
   </head>
   <body>
     <main class="page-shell">
@@ -28,31 +28,45 @@
             <span class="level-pill" id="level-value">AQUECIMENTO</span>
             <span class="threat-dots" id="threat-dots">●</span>
           </div>
-          <div class="overlay" id="overlay">
+          <div class="overlay" id="overlay" aria-hidden="false">
             <div class="overlay-card" id="overlay-card">
               <h2 id="overlay-title">Proteja a Mavie!</h2>
               <p class="eyebrow overlay-status" id="overlay-eyebrow" hidden></p>
               <p class="overlay-copy" id="overlay-copy">As bolas cruzam o campo em dois níveis. Mova para os lados, pule as rasteiras e abaixe para as altas.</p>
               <button class="primary-button" id="start-button" type="button">Começar a partida <span aria-hidden="true">→</span></button>
               <div class="hint control-guide" id="overlay-hint">
-                <svg class="keyboard-guide" viewBox="0 0 360 90" role="img" aria-labelledby="keyboard-guide-title keyboard-guide-desc">
+                <svg class="keyboard-guide" viewBox="0 0 360 108" role="img" aria-labelledby="keyboard-guide-title keyboard-guide-desc">
                   <title id="keyboard-guide-title">Controles de teclado</title>
                   <desc id="keyboard-guide-desc">Use A e D ou as setas esquerda e direita para mover. W, seta para cima ou espaço para pular. S ou seta para baixo para abaixar.</desc>
-                  <g class="keycap"><rect x="45" y="4" width="34" height="30" rx="6"/><text x="62" y="24">W</text></g>
-                  <g class="keycap"><rect x="8" y="40" width="34" height="30" rx="6"/><text x="25" y="60">A</text></g>
-                  <g class="keycap"><rect x="45" y="40" width="34" height="30" rx="6"/><text x="62" y="60">S</text></g>
-                  <g class="keycap"><rect x="82" y="40" width="34" height="30" rx="6"/><text x="99" y="60">D</text></g>
-                  <text class="key-caption" x="62" y="84">WASD</text>
-                  <g class="keycap"><rect x="229" y="4" width="34" height="30" rx="6"/><text x="246" y="24">↑</text></g>
-                  <g class="keycap"><rect x="192" y="40" width="34" height="30" rx="6"/><text x="209" y="60">←</text></g>
-                  <g class="keycap"><rect x="229" y="40" width="34" height="30" rx="6"/><text x="246" y="60">↓</text></g>
-                  <g class="keycap"><rect x="266" y="40" width="34" height="30" rx="6"/><text x="283" y="60">→</text></g>
-                  <text class="key-caption" x="246" y="84">SETAS</text>
-                  <g class="keycap space-key"><rect x="310" y="40" width="44" height="30" rx="6"/><text x="332" y="60">␣</text></g>
-                  <text class="key-caption space-caption" x="332" y="84">ESPAÇO</text>
+                  <text class="key-caption action-label" x="88" y="16">PULAR</text>
+                  <text class="key-caption action-label" x="272" y="16">PULAR</text>
+                  <text class="key-caption action-label" x="88" y="102">ABAIXAR</text>
+                  <text class="key-caption action-label" x="272" y="102">ABAIXAR</text>
+                  <g transform="translate(26 18)">
+                    <g class="keycap action-key"><rect x="45" y="4" width="34" height="30" rx="6"/><text x="62" y="24">W</text></g>
+                    <g class="keycap"><rect x="8" y="40" width="34" height="30" rx="6"/><text x="25" y="60">A</text></g>
+                    <g class="keycap action-key"><rect x="45" y="40" width="34" height="30" rx="6"/><text x="62" y="60">S</text></g>
+                    <g class="keycap"><rect x="82" y="40" width="34" height="30" rx="6"/><text x="99" y="60">D</text></g>
+                    <g class="keycap action-key"><rect x="229" y="4" width="34" height="30" rx="6"/><text x="246" y="24">↑</text></g>
+                    <g class="keycap"><rect x="192" y="40" width="34" height="30" rx="6"/><text x="209" y="60">←</text></g>
+                    <g class="keycap action-key"><rect x="229" y="40" width="34" height="30" rx="6"/><text x="246" y="60">↓</text></g>
+                    <g class="keycap"><rect x="266" y="40" width="34" height="30" rx="6"/><text x="283" y="60">→</text></g>
+                  </g>
                 </svg>
-                <p class="keyboard-legend">A/D ou ←/→: mover · W/↑/espaço: pular · S/↓: abaixar</p>
-                <p class="mobile-guide">Arraste no campo para mover. Use os botões ←/→ para ajustar a posição, ↑ para pular e ↓ para abaixar.</p>
+                <div class="mobile-guide" aria-label="Gestos no celular: deslize para cima para pular e para baixo para abaixar">
+                  <div class="gesture-card">
+                    <svg class="gesture-icon" viewBox="0 0 48 56" aria-hidden="true"><path d="M24 48V13m0 0L12 25m12-12 12 12"/><circle cx="24" cy="44" r="9"/></svg>
+                    <strong>DESLIZE PARA CIMA</strong><span>PULAR</span>
+                  </div>
+                  <div class="gesture-card">
+                    <svg class="gesture-icon" viewBox="0 0 48 56" aria-hidden="true"><path d="M24 8v35m0 0L12 31m12 12 12-12"/><circle cx="24" cy="12" r="9"/></svg>
+                    <strong>DESLIZE PARA BAIXO</strong><span>ABAIXAR</span>
+                  </div>
+                  <div class="gesture-card gesture-card-wide">
+                    <svg class="gesture-icon gesture-icon-wide" viewBox="0 0 64 48" aria-hidden="true"><path d="M24 24H7m0 0 7-7m-7 7 7 7M40 24h17m0 0-7-7m7 7-7 7"/><circle cx="32" cy="24" r="7"/></svg>
+                    <div class="gesture-text"><strong>DESLIZE PARA OS LADOS</strong><span>MOVER</span></div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -64,16 +78,23 @@
             <span><strong>Desvie em três movimentos</strong><small>Mova, pule e abaixe para desviar</small></span>
           </div>
           <div class="touch-controls" aria-label="Controles de movimento">
-            <button class="move-button" data-direction="-1" type="button" aria-label="Mover para a esquerda">←</button>
-            <button class="move-button" data-direction="1" type="button" aria-label="Mover para a direita">→</button>
-            <button class="move-button action-button" data-action="jump" type="button" aria-label="Pular">↑</button>
-            <button class="move-button action-button" data-action="duck" type="button" aria-label="Abaixar">↓</button>
+            <button class="move-button" data-direction="-1" type="button" aria-label="Mover para a esquerda">
+              <svg class="button-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m0 0 7-7m-7 7 7 7"/></svg><span>MOVER</span>
+            </button>
+            <button class="move-button" data-direction="1" type="button" aria-label="Mover para a direita">
+              <svg class="button-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m0 0-7-7m7 7-7 7"/></svg><span>MOVER</span>
+            </button>
+            <button class="move-button" data-action="jump" type="button" aria-label="Pular">
+              <svg class="button-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m0 0-7 7m7-7 7 7"/></svg><span>PULAR</span>
+            </button>
+            <button class="move-button" data-action="duck" type="button" aria-label="Abaixar">
+              <svg class="button-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m0 0 7-7m-7 7-7-7"/></svg><span>ABAIXAR</span>
+            </button>
           </div>
-          <button class="sound-button" id="sound-button" type="button" aria-pressed="false" aria-label="Ativar sons">♪<span>Som desligado</span></button>
         </div>
       </section>
 
     </main>
-    <script src="game.js" defer></script>
+    <script src="game.js?v=16" defer></script>
   </body>
 </html>

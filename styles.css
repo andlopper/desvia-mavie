@@ -36,7 +36,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .speech-line.is-visible { opacity: 1; visibility: visible; transform: translate(-50%, -100%); }
 .level-pill { padding: 7px 10px; border: 1px solid #e8ffde30; border-radius: 99px; color: #eeffe7; background: #1232259c; font: 700 9px 'Space Grotesk', sans-serif; letter-spacing: .13em; backdrop-filter: blur(5px); }
 .threat-dots { color: #f9f5e9; font-size: 11px; letter-spacing: 4px; text-shadow: 0 0 10px #ffffffaa; }
-.overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 18px; background: #071a1494; backdrop-filter: blur(3px); transition: opacity .22s ease, visibility .22s ease; }
+.overlay { position: absolute; z-index: 4; inset: 0; display: grid; place-items: center; padding: 18px; background: #071a1494; backdrop-filter: blur(3px); transition: opacity .22s ease, visibility .22s ease; }
 .overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 .overlay-card { width: min(365px, 100%); padding: 23px 25px 19px; text-align: center; border: 1px solid #ffffff24; border-radius: 17px; background: linear-gradient(145deg, #18372ceF, #10241eeF); box-shadow: 0 20px 60px #0006; }
 .overlay-card h2 { margin: 0 0 10px; font: 700 25px 'Space Grotesk', sans-serif; letter-spacing: -.04em; }
@@ -49,10 +49,21 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .control-guide { display: grid; justify-items: center; width: 100%; }
 .keyboard-guide { display: block; width: min(100%, 330px); height: auto; overflow: visible; }
 .keycap rect { fill: #244538; stroke: #e5f2e6; stroke-opacity: .35; stroke-width: 1; }
+.keycap.action-key rect { fill: #a8ef4f; stroke: #e4ffc1; stroke-width: 2; }
 .keycap text { fill: #f8f8ef; font: 700 14px 'Space Grotesk', sans-serif; text-anchor: middle; }
+.keycap.action-key text { fill: #18301e; font-size: 16px; }
 .key-caption { fill: #a6b9ab; font: 700 8px 'Space Grotesk', sans-serif; letter-spacing: 1px; text-anchor: middle; }
-.keyboard-legend { margin: 0; font-size: 9px; }
-.mobile-guide { display: none; max-width: 280px; margin: 0; line-height: 1.45; }
+.action-label { fill: #c8fa8c; font-size: 8px; letter-spacing: 1px; }
+.mobile-guide { display: none; width: min(100%, 270px); grid-template-columns: 1fr 1fr; gap: 9px; }
+.gesture-card { display: grid; justify-items: center; gap: 4px; padding: 8px 5px 7px; border: 1px solid #ffffff1c; border-radius: 11px; background: #ffffff08; text-align: center; }
+.gesture-icon { width: 38px; height: 42px; overflow: visible; }
+.gesture-icon path { fill: none; stroke: #c8fa8c; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.gesture-icon circle { fill: #a8ef4f38; stroke: #a8ef4f; stroke-width: 2; }
+.gesture-card strong { color: #c8fa8c; font: 700 8px 'Space Grotesk', sans-serif; letter-spacing: .06em; }
+.gesture-card span { color: #f8f8ef; font: 700 9px 'Space Grotesk', sans-serif; }
+.gesture-card-wide { grid-column: 1 / -1; grid-template-columns: 55px auto; align-items: center; justify-content: center; gap: 9px; }
+.gesture-icon-wide { width: 52px; height: 42px; }
+.gesture-text { display: grid; justify-items: start; align-content: center; gap: 4px; text-align: left; }
 .controls-row { justify-content: space-between; min-height: 76px; gap: 15px; }
 .control-copy { gap: 11px; }
 .control-icon { display: grid; place-items: center; width: 33px; height: 33px; border-radius: 10px; color: #d5f9a2; background: #ffffff0c; font-size: 18px; }
@@ -60,10 +71,10 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .control-copy strong { color: #e3eee3; font-size: 11px; }
 .control-copy small { color: #94a99b; font-size: 10px; }
 .touch-controls { display: none; gap: 8px; }
-.move-button { width: 45px; height: 40px; border: 1px solid #d7f9c833; border-radius: 10px; color: #eaffd8; background: #eaffd80d; font-size: 20px; touch-action: none; }
+.move-button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 45px; height: 40px; padding: 3px; border: 1px solid #d7f9c833; border-radius: 10px; color: #eaffd8; background: #eaffd80d; font-size: 8px; font-weight: 800; letter-spacing: .04em; touch-action: none; }
+.button-arrow { display: block; width: 21px; height: 21px; overflow: visible; }
+.button-arrow path { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .move-button:active { background: #a8ef4f3a; }
-.sound-button { display: inline-flex; align-items: center; gap: 7px; padding: 8px 0 8px 8px; border: 0; color: #b9cbbc; background: none; cursor: pointer; font-size: 16px; }
-.sound-button span { font-size: 10px; }
 @media (max-width: 650px) {
   html, body { width: 100%; height: 100%; overflow: hidden; }
   body { min-height: 100dvh; overscroll-behavior: none; }
@@ -108,19 +119,24 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   .hint { margin-top: 10px; font-size: 10px; }
   .keyboard-guide { display: none; }
   .keyboard-legend { display: none; }
-  .mobile-guide { display: block; }
+  .mobile-guide { display: grid; }
   .controls-row { flex: 0 0 auto; min-height: clamp(64px, 10dvh, 82px); gap: 5px; flex-wrap: nowrap; justify-content: center; padding: 7px 0; }
   .control-copy { display: none; }
-  .touch-controls { display: flex; flex: 1; justify-content: center; gap: clamp(5px, 2vw, 10px); }
-  .move-button { width: clamp(48px, 15vw, 64px); height: clamp(48px, 8dvh, 68px); border-radius: 15px; font-size: 24px; }
-  .sound-button { flex: 0 0 35px; justify-content: center; padding: 6px; margin: 0; }
-  .sound-button span { display: none; }
+  .touch-controls { display: flex; flex: 1; min-width: 0; justify-content: center; gap: clamp(4px, 1.5vw, 9px); }
+  .move-button { flex: 1 1 0; min-width: 0; max-width: 104px; height: clamp(56px, 9dvh, 70px); border-radius: 14px; font-size: 9px; }
+  .button-arrow { width: 23px; height: 23px; }
 }
 
 @media (pointer: coarse) {
   .keyboard-guide { display: none; }
   .keyboard-legend { display: none; }
-  .mobile-guide { display: block; }
+  .mobile-guide { display: grid; }
+  .controls-row { justify-content: center; }
+  .control-copy { display: none; }
+  .touch-controls { display: flex; flex: 1; justify-content: center; gap: clamp(5px, 2vw, 10px); }
+  .touch-controls { min-width: 0; }
+  .move-button { flex: 1 1 0; min-width: 54px; max-width: 104px; height: clamp(56px, 9dvh, 70px); border-radius: 14px; }
+  .button-arrow { width: 23px; height: 23px; }
 }
 
 @media (max-width: 650px) and (max-height: 600px) {
@@ -129,7 +145,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   .game-heading { padding-bottom: 6px; }
   h1 { font-size: 18px; }
   .controls-row { min-height: 56px; padding: 4px 0; }
-  .move-button { width: 48px; height: 48px; }
+  .move-button { min-width: 50px; height: 52px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
