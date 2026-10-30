@@ -15,7 +15,6 @@
   const overlayTitle = document.querySelector('#overlay-title');
   const overlayCopy = document.querySelector('#overlay-copy');
   const overlayEyebrow = document.querySelector('#overlay-eyebrow');
-  const overlayIcon = document.querySelector('#overlay-icon');
 
   const W = 960;
   const H = 510;
@@ -109,6 +108,7 @@
     speechTime = 0;
     speechBubble.classList.remove('is-visible');
     gameTitle.textContent = GAME_TITLE;
+    overlayEyebrow.hidden = true;
     state = 'playing';
     overlay.classList.add('hidden');
     updateHud();
@@ -129,16 +129,15 @@
     }
     updateHud();
     overlayEyebrow.textContent = 'FIM DE JOGO';
+    overlayEyebrow.hidden = false;
     const hitMessage = randomMessage(hitMessages, lastHitMessage);
     lastHitMessage = hitMessage;
     overlayTitle.textContent = hitMessage;
     gameTitle.textContent = hitMessage;
-    overlayIcon.hidden = true;
     speechTime = 0;
     speechBubble.classList.remove('is-visible');
     overlayCopy.textContent = `Você protegeu a Mavie por ${formatTime(elapsed)}. Respira, ajeita a camisa e tenta de novo.`;
     startButton.innerHTML = 'Jogar de novo <span aria-hidden="true">↻</span>';
-    document.querySelector('#overlay-hint').textContent = 'A bola passou raspando. A próxima defesa é sua!';
     overlay.classList.remove('hidden');
     playTone(180, .22, 'triangle');
   }
