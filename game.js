@@ -76,12 +76,56 @@
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(rect.width * ratio);
     canvas.height = Math.round(rect.height * ratio);
-    const scale = Math.min(canvas.width / W, canvas.height / H);
+    const portraitStage = rect.height / rect.width > H / W;
+    const scale = Math.min(canvas.width / W, canvas.height / H) * (portraitStage ? 1.06 : 1);
     const offsetX = (canvas.width - W * scale) / 2;
     const remainingY = canvas.height - H * scale;
-    const offsetY = remainingY > 0 ? remainingY * .8 : 0;
+    const offsetY = remainingY > 0 ? remainingY * .5 : 0;
+    drawMobileExtensions(canvas.width, canvas.height, offsetY, offsetY + H * scale, ratio);
     ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
     draw();
+  }
+
+  function drawMobileExtensions(width, height, sceneTop, sceneBottom, ratio) {
+    if (sceneTop > 0) {
+      const sky = ctx.createLinearGradient(0, 0, 0, sceneTop);
+      sky.addColorStop(0, '#6fae98');
+      sky.addColorStop(1, '#78b9a1');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, width, sceneTop);
+
+      ctx.fillStyle = '#f1f1d7a8';
+      [[.2, .57, 1], [.72, .34, .72], [.86, .76, .48]].forEach(([x, y, size]) => {
+        const centerX = width * x;
+        const centerY = sceneTop * y;
+        ctx.beginPath();
+        ctx.ellipse(centerX, centerY, 25 * ratio * size, 8 * ratio * size, 0, 0, Math.PI * 2);
+        ctx.ellipse(centerX - 12 * ratio * size, centerY + ratio * size, 12 * ratio * size, 7 * ratio * size, 0, 0, Math.PI * 2);
+        ctx.ellipse(centerX + 11 * ratio * size, centerY - 3 * ratio * size, 14 * ratio * size, 10 * ratio * size, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    if (sceneBottom < height) {
+      const field = ctx.createLinearGradient(0, sceneBottom, 0, height);
+      field.addColorStop(0, '#246d41');
+      field.addColorStop(1, '#174d31');
+      ctx.fillStyle = field;
+      ctx.fillRect(0, sceneBottom, width, height - sceneBottom);
+
+      const stripeHeight = 22 * ratio;
+      for (let y = sceneBottom; y < height; y += stripeHeight) {
+        const stripeIndex = Math.floor((y - sceneBottom) / stripeHeight);
+        ctx.fillStyle = stripeIndex % 2 === 0 ? '#ffffff0a' : '#0b381210';
+        ctx.fillRect(0, y, width, stripeHeight);
+      }
+      ctx.strokeStyle = '#e8f2cd55';
+      ctx.lineWidth = 1.5 * ratio;
+      ctx.beginPath();
+      ctx.moveTo(0, sceneBottom + 5 * ratio);
+      ctx.lineTo(width, sceneBottom + 5 * ratio);
+      ctx.stroke();
+    }
   }
 
   function formatTime(value) { return `${value.toFixed(1)}s`; }
@@ -181,9 +225,10 @@
   function positionSpeechLine() {
     if (!speechTime) return;
     const rect = canvas.getBoundingClientRect();
-    const scale = Math.min(rect.width / W, rect.height / H);
+    const portraitStage = rect.height / rect.width > H / W;
+    const scale = Math.min(rect.width / W, rect.height / H) * (portraitStage ? 1.06 : 1);
     const offsetX = (rect.width - W * scale) / 2;
-    const offsetY = Math.max(0, rect.height - H * scale) * .8;
+    const offsetY = Math.max(0, rect.height - H * scale) * .5;
     const left = clamp(player.x * scale + offsetX, 50, rect.width - 50);
     speechBubble.style.left = `${left}px`;
     speechBubble.style.top = `${(groundY - 190 - player.jumpHeight) * scale + offsetY}px`;

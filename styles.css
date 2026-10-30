@@ -71,7 +71,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .control-copy strong { color: #e3eee3; font-size: 11px; }
 .control-copy small { color: #94a99b; font-size: 10px; }
 .touch-controls { display: none; gap: 8px; }
-.move-button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 45px; height: 40px; padding: 3px; border: 1px solid #d7f9c833; border-radius: 10px; color: #eaffd8; background: #eaffd80d; font-size: 8px; font-weight: 800; letter-spacing: .04em; touch-action: none; }
+.move-button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 45px; height: 40px; padding: 3px; border: 1px solid #d7f9c833; border-radius: 10px; color: #eaffd8; background: #eaffd80d; font-size: 8px; font-weight: 800; letter-spacing: .04em; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 .button-arrow { display: block; width: 21px; height: 21px; overflow: visible; }
 .button-arrow path { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .move-button:active { background: #a8ef4f3a; }
