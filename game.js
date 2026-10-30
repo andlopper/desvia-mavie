@@ -52,7 +52,7 @@
   let pointerActive = false;
   let pointerStartX = 0;
   let pointerStartY = 0;
-  let pointerMoved = false;
+  let pointerStartPlayerX = 0;
   let pointerDucking = false;
   let swipeDuckUntil = 0;
   let shake = 0;
@@ -161,12 +161,6 @@
       spinAxis, spinAngle: Math.random() * Math.PI * 2,
       spinSpeed: 2.5 + Math.random() * 7.5
     });
-  }
-
-  function moveToPointer(event) {
-    const rect = canvas.getBoundingClientRect();
-    const pointX = (event.clientX - rect.left) / rect.width * W;
-    player.targetX = clamp(pointX, 68, W - 140);
   }
 
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
@@ -608,21 +602,18 @@
   canvas.addEventListener('pointerdown', (event) => {
     if (state !== 'playing') return;
     pointerActive = true;
-    pointerMoved = false;
     pointerDucking = false;
     pointerStartX = event.clientX;
     pointerStartY = event.clientY;
+    pointerStartPlayerX = player.x;
     canvas.setPointerCapture(event.pointerId);
-    moveToPointer(event);
   });
   canvas.addEventListener('pointermove', (event) => {
     if (!pointerActive) return;
     const deltaX = event.clientX - pointerStartX;
     const deltaY = event.clientY - pointerStartY;
-    if (Math.abs(deltaX) > 12) pointerMoved = true;
     if (!pointerDucking && Math.abs(deltaY) > 28 && Math.abs(deltaY) > Math.abs(deltaX) * 1.15) {
       pointerDucking = true;
-      pointerMoved = true;
       if (deltaY > 0) {
         swipeDuckUntil = performance.now() + 650;
         keys.add('arrowdown');
@@ -630,13 +621,15 @@
         jump();
       }
     }
-    if (!pointerDucking) moveToPointer(event);
+    if (!pointerDucking && Math.abs(deltaX) > 12) {
+      const rect = canvas.getBoundingClientRect();
+      player.targetX = clamp(pointerStartPlayerX + deltaX * W / rect.width, 68, W - 140);
+    }
   });
   const finishCanvasPointer = () => {
     if (!pointerActive) return;
     pointerActive = false;
     if (pointerDucking) keys.delete('arrowdown');
-    else if (!pointerMoved) jump();
   };
   canvas.addEventListener('pointerup', finishCanvasPointer);
   canvas.addEventListener('pointercancel', finishCanvasPointer);
