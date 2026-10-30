@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#102d25" />
+    <meta name="description" content="Proteja o bebê e desvie das bolas neste jogo de futebol cartunesco." />
+    <title>Desvia, Mavie!</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Início do jogo">
+          <span class="brand-mark" aria-hidden="true">⚽</span>
+          <span>CAMPO DE DESVIO</span>
+        </a>
+        <span class="top-note">um jogo de reflexos</span>
+      </header>
+
+      <section class="game-card" aria-label="Jogo Desvia, Mavie!">
+        <div class="game-heading">
+          <div>
+            <p class="eyebrow">DESAFIO DO DIA</p>
+            <h1 id="game-title">Desvia, Mavie!</h1>
+          </div>
+          <div class="scoreboard" aria-live="polite">
+            <div><span class="score-label">TEMPO</span><strong id="time-value">0.0s</strong></div>
+            <div><span class="score-label">RECORDE</span><strong id="best-value">0.0s</strong></div>
+          </div>
+        </div>
+
+        <div class="stage-wrap">
+          <canvas id="game" aria-label="Campo de futebol: mova o personagem para desviar das bolas" role="img"></canvas>
+          <div class="speech-line" id="speech-bubble" aria-live="polite"></div>
+          <div class="stage-hud" aria-hidden="true">
+            <span class="level-pill" id="level-value">AQUECIMENTO</span>
+            <span class="threat-dots" id="threat-dots">●</span>
+          </div>
+          <div class="overlay" id="overlay">
+            <div class="overlay-card" id="overlay-card">
+              <h2 id="overlay-title">Proteja a Mavie!</h2>
+              <p class="eyebrow" id="overlay-eyebrow">ATENÇÃO, CRAQUE</p>
+              <div class="overlay-icon" id="overlay-icon" aria-hidden="true">🍼</div>
+              <p class="overlay-copy" id="overlay-copy">As bolas cruzam o campo em dois níveis. Mova para os lados, pule as rasteiras e abaixe para as altas.</p>
+              <button class="primary-button" id="start-button" type="button">Começar a partida <span aria-hidden="true">→</span></button>
+              <p class="hint" id="overlay-hint">← → mover · ↑/W/espaço pular · ↓/S abaixar · no celular, use os botões</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls-row">
+          <div class="control-copy">
+            <span class="control-icon" aria-hidden="true">↔</span>
+            <span><strong>Desvie em três movimentos</strong><small>← → mover · ↑/W/espaço pular · ↓/S abaixar</small></span>
+          </div>
+          <div class="touch-controls" aria-label="Controles de movimento">
+            <button class="move-button" data-direction="-1" type="button" aria-label="Mover para a esquerda">←</button>
+            <button class="move-button" data-direction="1" type="button" aria-label="Mover para a direita">→</button>
+            <button class="move-button action-button" data-action="jump" type="button" aria-label="Pular">↑</button>
+            <button class="move-button action-button" data-action="duck" type="button" aria-label="Abaixar">↓</button>
+          </div>
+          <button class="sound-button" id="sound-button" type="button" aria-pressed="false" aria-label="Ativar sons">♪<span>Som desligado</span></button>
+        </div>
+      </section>
+
+      <footer class="footer"><span>SEM VAR · SÓ REFLEXO</span><span>feito para jogar em qualquer tela</span></footer>
+    </main>
+    <script src="game.js" defer></script>
+  </body>
+</html>
