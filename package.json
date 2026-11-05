@@ -1,0 +1,11 @@
+{
+  "name": "desvia-mavie",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/game-logic.test.js tests/game-runtime.test.js && node scripts/check-site.mjs",
+    "test:unit": "node --test tests/game-logic.test.js tests/game-runtime.test.js",
+    "test:site": "node scripts/check-site.mjs",
+    "check": "node --check game.js && node --check game-logic.js && node --check serve.mjs && node --check scripts/check-site.mjs"
+  }
+}

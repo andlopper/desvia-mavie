@@ -1,8 +1,41 @@
+import {
+  advanceJump, BALL_RADIUS, clamp, DUCK_HEIGHT_RATIO,
+  getBallDuration, getJumpFrameIndex, getSpawnInterval,
+  AIR_BALL_OFFSET, JUMP_FRAME_HEIGHT_RATIOS, PLAYER_DISPLAY_HEIGHT,
+  circlePastLeftEdge, circleTouchesAlphaMask, getPortraitCamera
+} from './game-logic.js';
+
 (() => {
   'use strict';
 
   const canvas = document.querySelector('#game');
   const ctx = canvas.getContext('2d');
+  const desktopBackground = new Image();
+  const mobileBackground = new Image();
+  mobileBackground.addEventListener('load', () => resize());
+  desktopBackground.addEventListener('load', () => draw());
+  desktopBackground.src = 'assets/backgrounds/desktop.png?v=stadium-20261104';
+  mobileBackground.src = 'assets/backgrounds/mobile.png?v=stadium-20261104';
+  function loadSprite(path) {
+    const image = new Image();
+    image.addEventListener('load', () => draw());
+    image.src = `${path}?v=character-animations-20261105-v1`;
+    return image;
+  }
+  const playerSprite = loadSprite('assets/characters/idle.png');
+  const spriteAlphaMasks = new WeakMap();
+  const walkSprites = [
+    { image: loadSprite('assets/characters/walk-c.png'), anchorX: 128 },
+    { image: loadSprite('assets/characters/walk-a.png'), anchorX: 302 },
+    { image: loadSprite('assets/characters/walk-b.png'), anchorX: 177 }
+  ];
+  const jumpSprites = Array.from({ length: 8 }, (_, index) =>
+    loadSprite(`assets/characters/jump-${String(index).padStart(2, '0')}.png`));
+  const duckSprite = loadSprite('assets/characters/duck.png');
+  const duckWalkSprites = Array.from({ length: 3 }, (_, index) =>
+    loadSprite(`assets/characters/duck-walk-${String(index).padStart(2, '0')}.png`));
+  const ballSprites = Array.from({ length: 8 }, (_, index) =>
+    loadSprite(`assets/balls/rotation-${String(index).padStart(2, '0')}.png`));
   const speechBubble = document.querySelector('#speech-bubble');
   const overlay = document.querySelector('#overlay');
   const gameTitle = document.querySelector('#game-title');
@@ -18,6 +51,35 @@
   const W = 960;
   const H = 510;
   const groundY = 405;
+  // Anatomical landmarks in the source image: the hip is at the shorts waist,
+  // and the knees sit just below the shorts. The same landmarks drive both
+  // the connected sprite warp and its collision shapes.
+  const PLAYER_SPRITE = { width: 619, height: 1415, baseDisplayHeight: PLAYER_DISPLAY_HEIGHT, displayHeight: PLAYER_DISPLAY_HEIGHT, anchorX: 221, hipY: 800, kneeY: 1065 };
+  const DUCK_SPRITE = { width: 745, height: 1022, anchorX: 290 };
+  const portraitFocusX = W * .29;
+  let worldScale = 1;
+  let worldOffsetX = 0;
+  let worldOffsetY = 0;
+  function updateSpriteMetrics() {
+    PLAYER_SPRITE.displayHeight = PLAYER_SPRITE.baseDisplayHeight;
+    PLAYER_SPRITE.scale = PLAYER_SPRITE.displayHeight / PLAYER_SPRITE.height;
+    PLAYER_SPRITE.displayWidth = PLAYER_SPRITE.width * PLAYER_SPRITE.scale;
+    PLAYER_SPRITE.anchorOffsetX = PLAYER_SPRITE.anchorX * PLAYER_SPRITE.scale;
+    PLAYER_SPRITE.hipScreenY = groundY - (PLAYER_SPRITE.height - PLAYER_SPRITE.hipY) * PLAYER_SPRITE.scale;
+    DUCK_SPRITE.displayHeight = PLAYER_SPRITE.displayHeight * DUCK_HEIGHT_RATIO;
+  }
+  const JUMP_FRAME_LAYOUTS = [
+    { anchorX: .38, anchorY: .62, grounded: true },
+    { anchorX: .38, anchorY: .55, grounded: true },
+    { anchorX: .38, anchorY: .5, grounded: true },
+    { anchorX: .38, anchorY: .63 },
+    { anchorX: .38, anchorY: .61 },
+    { anchorX: .38, anchorY: .6 },
+    { anchorX: .38, anchorY: .58 },
+    { anchorX: .38, anchorY: .53, grounded: true }
+  ];
+  const WALK_FRAME_DURATION = .1;
+  const DUCK_WALK_FRAME_DURATION = .18;
   const phi = (1 + Math.sqrt(5)) / 2;
   const soccerPanelNormals = [
     [0, 1, phi], [0, -1, phi], [0, 1, -phi], [0, -1, -phi],
@@ -27,10 +89,12 @@
     const length = Math.hypot(x, y, z);
     return [x / length, y / length, z / length];
   });
-  const JUMP_PREP_DURATION = .07;
+  const JUMP_PREP_DURATION = .14;
   const player = {
     x: W * 0.29, targetX: W * 0.29, speed: 720,
-    jumpHeight: 0, jumpVelocity: 0, jumpPrep: 0, jumpPending: false, ducking: false
+    jumpHeight: 0, jumpVelocity: 0, jumpPrep: 0, jumpPending: false, landingTimer: 0,
+    ducking: false, duckAmount: 0, walking: false, walkPhase: 0,
+    duckWalking: false, duckWalkPhase: 0
   };
   const passMessages = [
     'Arrogantchi!', 'Dónde quieres?', 'A mi no!', 'Otário',
@@ -60,6 +124,8 @@
   let lastPassMessage = '';
   let lastHitMessage = '';
   let speechTime = 0;
+  let portraitStage = false;
+  let hitFreezeUntil = 0;
 
   function readBest() {
     try { return Number(localStorage.getItem('mavie-dodge-best')) || 0; }
@@ -76,13 +142,25 @@
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(rect.width * ratio);
     canvas.height = Math.round(rect.height * ratio);
-    const portraitStage = rect.height / rect.width > H / W;
-    const scale = Math.min(canvas.width / W, canvas.height / H) * (portraitStage ? 1.06 : 1);
-    const offsetX = (canvas.width - W * scale) / 2;
-    const remainingY = canvas.height - H * scale;
-    const offsetY = remainingY > 0 ? remainingY * .5 : 0;
-    drawMobileExtensions(canvas.width, canvas.height, offsetY, offsetY + H * scale, ratio);
-    ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+    portraitStage = rect.height / rect.width > H / W;
+    if (portraitStage) {
+      ({ scale: worldScale, offsetX: worldOffsetX, offsetY: worldOffsetY } =
+        getPortraitCamera(canvas.width, canvas.height, W, H, portraitFocusX));
+    } else {
+      worldScale = Math.min(canvas.width / W, canvas.height / H);
+      worldOffsetX = (canvas.width - W * worldScale) / 2;
+      worldOffsetY = Math.max(0, canvas.height - H * worldScale) * .8;
+    }
+    updateSpriteMetrics();
+    if (balls.length) {
+      balls.forEach((ball) => { ball.radius = BALL_RADIUS; });
+    }
+    const sceneTop = worldOffsetY;
+    const sceneBottom = worldOffsetY + H * worldScale;
+    if (portraitStage && (!mobileBackground.complete || !mobileBackground.naturalWidth)) {
+      drawMobileExtensions(canvas.width, canvas.height, sceneTop, sceneBottom, ratio);
+    }
+    ctx.setTransform(worldScale, 0, 0, worldScale, worldOffsetX, worldOffsetY);
     draw();
   }
 
@@ -150,10 +228,17 @@
     player.jumpVelocity = 0;
     player.jumpPrep = 0;
     player.jumpPending = false;
+    player.landingTimer = 0;
     player.ducking = false;
+    player.duckAmount = 0;
+    player.walking = false;
+    player.walkPhase = 0;
+    player.duckWalking = false;
+    player.duckWalkPhase = 0;
     swipeDuckUntil = 0;
     speechTime = 0;
     speechBubble.classList.remove('is-visible');
+    overlay.classList.remove('overlay--game-over');
     gameTitle.textContent = GAME_TITLE;
     overlayEyebrow.hidden = true;
     state = 'playing';
@@ -161,16 +246,44 @@
     overlay.setAttribute('aria-hidden', 'true');
     updateHud();
     lastFrame = performance.now();
+    if (document.hidden) {
+      pauseGame();
+      return;
+    }
     requestAnimationFrame(frame);
   }
 
-  function endGame() {
+  function pauseGame() {
     if (state !== 'playing') return;
-    state = 'over';
+    state = 'paused';
+    keys.clear();
+    speechTime = 0;
+    speechBubble.classList.remove('is-visible');
+    overlayTitle.textContent = 'Partida pausada';
+    overlayEyebrow.hidden = true;
+    overlayCopy.textContent = 'O jogo pausou enquanto esta aba estava em segundo plano.';
+    startButton.innerHTML = 'Continuar partida <span aria-hidden="true">▶</span>';
     overlay.classList.remove('hidden');
     overlay.setAttribute('aria-hidden', 'false');
-    shake = 10;
-    burst(player.x + 25, groundY - 48, '#f8ecce', 15);
+  }
+
+  function resumeGame() {
+    if (state !== 'paused') return;
+    keys.clear();
+    state = 'playing';
+    overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
+    lastFrame = performance.now();
+    requestAnimationFrame(frame);
+  }
+
+  function endGame(hitBall) {
+    if (state !== 'playing') return;
+    state = 'hit';
+    keys.clear();
+    balls.splice(0, balls.length, hitBall);
+    hitFreezeUntil = performance.now() + 180;
+    shake = 0;
     const isNewBest = elapsed > best;
     if (isNewBest) {
       best = elapsed;
@@ -188,17 +301,25 @@
     startButton.innerHTML = 'Jogar de novo <span aria-hidden="true">↻</span>';
   }
 
+  function showGameOverModal() {
+    state = 'over';
+    overlay.classList.add('overlay--game-over');
+    overlay.classList.remove('hidden');
+    overlay.setAttribute('aria-hidden', 'false');
+  }
+
   function spawnBall() {
-    const difficulty = Math.min(1, elapsed / 75);
     const startX = W + 45;
-    const duration = 3.1 - difficulty * 1.2 + Math.random() * .25;
+    const duration = getBallDuration(elapsed, Math.random());
     const lane = Math.random() < .58 ? 'ground' : 'air';
-    const y = lane === 'ground' ? groundY - 20 : groundY - 150;
+    const y = lane === 'ground' ? groundY - 20 : groundY - AIR_BALL_OFFSET;
     const axis = [Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1];
     const axisLength = Math.hypot(...axis) || 1;
     const spinAxis = axis.map((component) => component / axisLength);
     balls.push({
-      id: ballId++, x: startX, y, startX, t: 0, duration, lane, radius: 19,
+      // A regulation ball is about 13% of an adult's height; the player sprite is 160px tall.
+      id: ballId++, x: startX, y, startX, t: 0, duration, lane,
+      radius: BALL_RADIUS,
       orientationX: Math.random() * Math.PI * 2,
       orientationY: Math.random() * Math.PI * 2,
       orientationZ: Math.random() * Math.PI * 2,
@@ -207,11 +328,18 @@
     });
   }
 
-  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-
   function randomMessage(messages, previous) {
     const choices = messages.filter((message) => message !== previous);
     return choices[Math.floor(Math.random() * choices.length)];
+  }
+
+  function getMovementBounds() {
+    if (!portraitStage) return [68, W - 140];
+    const halfVisibleWidth = canvas.width / (2 * worldScale);
+    return [
+      clamp(portraitFocusX - halfVisibleWidth + 56, 68, W - 140),
+      clamp(portraitFocusX + halfVisibleWidth - 96, 68, W - 140)
+    ];
   }
 
   function showPassMessage() {
@@ -225,13 +353,14 @@
   function positionSpeechLine() {
     if (!speechTime) return;
     const rect = canvas.getBoundingClientRect();
-    const portraitStage = rect.height / rect.width > H / W;
-    const scale = Math.min(rect.width / W, rect.height / H) * (portraitStage ? 1.06 : 1);
-    const offsetX = (rect.width - W * scale) / 2;
-    const offsetY = Math.max(0, rect.height - H * scale) * .5;
+    const pixelToCss = rect.width / canvas.width;
+    const scale = worldScale * pixelToCss;
+    const offsetX = worldOffsetX * pixelToCss;
+    const offsetY = worldOffsetY * rect.height / canvas.height;
     const left = clamp(player.x * scale + offsetX, 50, rect.width - 50);
     speechBubble.style.left = `${left}px`;
-    speechBubble.style.top = `${(groundY - 190 - player.jumpHeight) * scale + offsetY}px`;
+    const playerHeight = player.ducking ? DUCK_SPRITE.displayHeight : PLAYER_SPRITE.displayHeight;
+    speechBubble.style.top = `${(groundY - playerHeight - 30 - player.jumpHeight) * scale + offsetY}px`;
   }
 
   function jump() {
@@ -241,74 +370,41 @@
   }
 
   function intersectsBall(ball) {
-    const anticipation = player.jumpPending ? .68 * (1 - player.jumpPrep / JUMP_PREP_DURATION) : 0;
-    const crouch = Math.max(player.ducking ? 1 : 0, anticipation);
-    const angle = crouch * .9;
-    const dx = ball.x - player.x;
-    const dy = ball.y - (groundY - 37 - player.jumpHeight);
-    const localBall = {
-      x: player.x + dx * Math.cos(angle) + dy * Math.sin(angle),
-      y: groundY - 37 - dx * Math.sin(angle) + dy * Math.cos(angle)
-    };
-    const ellipses = [
-      { x: player.x + 1, y: groundY - 69, rx: 26, ry: 34 }, // shirt
-      { x: player.x + 2, y: groundY - 128, rx: 23, ry: 27 }, // head
-      { x: player.x + 52, y: groundY - 116, rx: 23, ry: 26 }, // baby's head
-      { x: player.x + 52, y: groundY - 68, rx: 21, ry: 25 } // baby's outfit
-    ];
-    return ellipses.some((shape) => circleTouchesEllipse(localBall, ball.radius, shape))
-      || playerLegsTouchBall(ball);
-  }
-
-  function circleTouchesEllipse(point, radius, ellipse) {
-    const dx = point.x - ellipse.x;
-    const dy = point.y - ellipse.y;
-    const normalized = (dx * dx) / (ellipse.rx * ellipse.rx) + (dy * dy) / (ellipse.ry * ellipse.ry);
-    if (normalized <= 1) return true;
-
-    let angle = Math.atan2(dy * ellipse.rx, dx * ellipse.ry);
-    for (let i = 0; i < 6; i++) {
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      const ex = ellipse.rx * cos - dx;
-      const ey = ellipse.ry * sin - dy;
-      const tx = -ellipse.rx * sin;
-      const ty = ellipse.ry * cos;
-      const first = ex * tx + ey * ty;
-      const second = tx * tx + ty * ty - ex * ellipse.rx * cos - ey * ellipse.ry * sin;
-      if (Math.abs(second) < 1e-8) break;
-      angle -= first / second;
-    }
-    const nearestX = ellipse.rx * Math.cos(angle);
-    const nearestY = ellipse.ry * Math.sin(angle);
-    return Math.hypot(dx - nearestX, dy - nearestY) <= radius;
-  }
-
-  function playerLegsTouchBall(ball) {
-    const crouch = player.ducking ? 1 : 0;
-    const airBend = player.jumpHeight > 0 ? Math.min(.48, player.jumpHeight / 190) : 0;
-    const bend = Math.max(crouch, airBend);
-    for (const side of [-1, 1]) {
-      const points = [
-        { x: player.x + side * 12, y: groundY - 38 - player.jumpHeight },
-        { x: player.x + side * 12 + bend * 11, y: groundY - 19 + bend * 8 - airBend * 4 - player.jumpHeight },
-        { x: player.x + side * 14 - bend * 7, y: groundY - 4 - airBend * 12 - player.jumpHeight }
-      ];
-      for (let i = 0; i < points.length - 1; i++) {
-        const a = points[i];
-        const b = points[i + 1];
-        const lengthSq = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
-        const t = clamp(((ball.x - a.x) * (b.x - a.x) + (ball.y - a.y) * (b.y - a.y)) / lengthSq, 0, 1);
-        const nearestX = a.x + t * (b.x - a.x);
-        const nearestY = a.y + t * (b.y - a.y);
-        if (Math.hypot(ball.x - nearestX, ball.y - nearestY) <= ball.radius + 5.5) return true;
-      }
-      const foot = { left: points[2].x - 14, right: points[2].x + 12, top: points[2].y - 3, bottom: points[2].y + 7 };
-      const nearestX = clamp(ball.x, foot.left, foot.right);
-      const nearestY = clamp(ball.y, foot.top, foot.bottom);
-      if (Math.hypot(ball.x - nearestX, ball.y - nearestY) <= ball.radius) return true;
+    const renderedPlayer = getPlayerRenderState();
+    if (!renderedPlayer) return false;
+    const mask = getSpriteAlphaMask(renderedPlayer.sprite);
+    if (mask) {
+      return circleTouchesAlphaMask(ball, ball.radius, mask, {
+        left: renderedPlayer.left,
+        top: renderedPlayer.top,
+        scale: renderedPlayer.scale
+      });
     }
     return false;
+  }
+
+  function getSpriteAlphaMask(sprite) {
+    const existing = spriteAlphaMasks.get(sprite);
+    if (existing) return existing;
+    if (!sprite.complete || !sprite.naturalWidth || !sprite.naturalHeight) return null;
+    if (typeof document.createElement !== 'function') return null;
+    try {
+      const scratch = document.createElement('canvas');
+      scratch.width = sprite.naturalWidth;
+      scratch.height = sprite.naturalHeight;
+      const scratchContext = scratch.getContext('2d', { willReadFrequently: true });
+      scratchContext.drawImage(sprite, 0, 0);
+      const mask = {
+        width: sprite.naturalWidth,
+        height: sprite.naturalHeight,
+        data: scratchContext.getImageData(0, 0, sprite.naturalWidth, sprite.naturalHeight).data
+      };
+      spriteAlphaMasks.set(sprite, mask);
+      return mask;
+    } catch (error) {
+      console.warn('Não foi possível ler a transparência do sprite para colisão:', error);
+      return null;
+    }
   }
 
   function update(dt) {
@@ -318,8 +414,12 @@
     let direction = 0;
     if (keys.has('arrowleft') || keys.has('a')) direction -= 1;
     if (keys.has('arrowright') || keys.has('d')) direction += 1;
-    if (direction) player.targetX = clamp(player.targetX + direction * player.speed * dt, 68, W - 140);
+    if (direction) {
+      const [minX, maxX] = getMovementBounds();
+      player.targetX = clamp(player.targetX + direction * player.speed * dt, minX, maxX);
+    }
     player.x += (player.targetX - player.x) * Math.min(1, dt * 13);
+    const horizontalDelta = player.x - previousPlayerX;
     if (speechTime > 0) {
       speechTime = Math.max(0, speechTime - dt);
       if (!speechTime) speechBubble.classList.remove('is-visible');
@@ -327,24 +427,32 @@
     }
     player.ducking = player.jumpHeight === 0 && !player.jumpPending
       && (keys.has('arrowdown') || keys.has('s') || performance.now() < swipeDuckUntil);
-    if (player.jumpPending) {
-      player.jumpPrep -= dt;
-      if (player.jumpPrep <= 0) {
-        player.jumpPrep = 0;
-        player.jumpPending = false;
-        player.jumpVelocity = 620;
-      }
+    player.duckAmount += ((player.ducking ? 1 : 0) - player.duckAmount) * Math.min(1, dt * 16);
+    player.landingTimer = Math.max(0, player.landingTimer - dt);
+    const horizontalSpeed = dt > 0 ? horizontalDelta / dt : 0;
+    const canWalk = !player.jumpPending && player.jumpHeight === 0 && !player.landingTimer;
+    const isMoving = canWalk && Math.abs(horizontalSpeed) > 8;
+    player.walking = isMoving && !player.ducking;
+    player.duckWalking = isMoving && player.ducking;
+    if (player.walking) {
+      const gaitRate = clamp(Math.abs(horizontalSpeed) / player.speed, .45, 1.1);
+      const cycleDuration = WALK_FRAME_DURATION * walkSprites.length;
+      player.walkPhase = (player.walkPhase + Math.sign(horizontalDelta) * dt * gaitRate) % cycleDuration;
+      if (player.walkPhase < 0) player.walkPhase += cycleDuration;
+    } else {
+      player.walkPhase = 0;
     }
-    if (player.jumpHeight > 0 || player.jumpVelocity > 0) {
-      player.jumpHeight += player.jumpVelocity * dt;
-      player.jumpVelocity -= 1550 * dt;
-      if (player.jumpHeight <= 0) {
-        player.jumpHeight = 0;
-        player.jumpVelocity = 0;
-      }
+    if (player.duckWalking) {
+      const gaitRate = clamp(Math.abs(horizontalSpeed) / player.speed, .45, 1.1);
+      const cycleDuration = DUCK_WALK_FRAME_DURATION * duckWalkSprites.length;
+      player.duckWalkPhase = (player.duckWalkPhase + Math.sign(horizontalDelta) * dt * gaitRate) % cycleDuration;
+      if (player.duckWalkPhase < 0) player.duckWalkPhase += cycleDuration;
+    } else {
+      player.duckWalkPhase = 0;
     }
+    if (advanceJump(player, dt)) player.landingTimer = .14;
 
-    const interval = Math.max(.53, 1.48 - elapsed * .012);
+    const interval = getSpawnInterval(elapsed);
     spawnClock -= dt;
     if (spawnClock <= 0) {
       spawnBall();
@@ -360,7 +468,7 @@
       ball.x = ball.startX - (W + 110) * progress;
       ball.spinAngle += dt * ball.spinSpeed;
       if (intersectsBall(ball)) {
-        endGame();
+        endGame(ball);
         return;
       }
       const wasAheadOfPlayer = previousX > previousPlayerX + 88;
@@ -369,7 +477,8 @@
         ball.spoke = true;
         showPassMessage();
       }
-      if (progress >= 1) {
+      const visibleLeftEdge = -worldOffsetX / worldScale;
+      if (progress >= 1 || circlePastLeftEdge(ball.x, ball.radius, visibleLeftEdge)) {
         balls.splice(i, 1);
       }
     }
@@ -381,22 +490,43 @@
     updateHud();
   }
 
-  function burst(x, y, color, count) {
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 40 + Math.random() * 190;
-      particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 70, life: .35 + Math.random() * .5, maxLife: .85, size: 2 + Math.random() * 4, color });
+  function frame(now, fromWatchdog = false) {
+    if (state === 'hit') {
+      draw();
+      if (now >= hitFreezeUntil) showGameOverModal();
+      else requestAnimationFrame(frame);
+      return;
     }
+    if (state !== 'playing') { draw(); return; }
+    let remaining = Math.min(.1, Math.max(0, (now - lastFrame) / 1000));
+    lastFrame = now;
+    try {
+      while (remaining > 0 && state === 'playing') {
+        const dt = Math.min(.033, remaining);
+        update(dt);
+        remaining -= dt;
+      }
+      draw();
+    } catch (error) {
+      console.error('Falha no ciclo do jogo:', error);
+      state = 'error';
+      keys.clear();
+      overlayTitle.textContent = 'O jogo encontrou um erro';
+      overlayEyebrow.hidden = true;
+      overlayCopy.textContent = 'Recarregue a página para iniciar uma nova partida.';
+      startButton.innerHTML = 'Recarregar jogo <span aria-hidden="true">↻</span>';
+      overlay.classList.remove('hidden');
+      overlay.setAttribute('aria-hidden', 'false');
+      return;
+    }
+    if (state === 'hit' || (state === 'playing' && !fromWatchdog)) requestAnimationFrame(frame);
   }
 
-  function frame(now) {
-    if (state !== 'playing') { draw(); return; }
-    const dt = Math.min(.033, Math.max(0, (now - lastFrame) / 1000));
-    lastFrame = now;
-    update(dt);
-    draw();
-    if (state === 'playing') requestAnimationFrame(frame);
-  }
+  window.setInterval(() => {
+    if (state !== 'playing' || document.hidden) return;
+    const now = performance.now();
+    if (now - lastFrame > .18 * 1000) frame(now, true);
+  }, 80);
 
   function roundedRect(x, y, w, h, r, fill) {
     ctx.fillStyle = fill;
@@ -406,14 +536,42 @@
   }
 
   function draw() {
+    const hasBackground = portraitStage
+      ? mobileBackground.complete && mobileBackground.naturalWidth
+      : desktopBackground.complete && desktopBackground.naturalWidth;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#173c2d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    if (portraitStage && hasBackground) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(mobileBackground, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    } else if (!portraitStage && hasBackground) {
+      const scale = Math.max(W / desktopBackground.naturalWidth, H / desktopBackground.naturalHeight);
+      const width = desktopBackground.naturalWidth * scale;
+      const height = desktopBackground.naturalHeight * scale;
+      ctx.drawImage(desktopBackground, (W - width) / 2, (H - height) / 2, width, height);
+    }
+
+    ctx.setTransform(worldScale, 0, 0, worldScale, worldOffsetX, worldOffsetY);
     ctx.save();
     if (shake > 0) {
       ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
       shake *= .83;
     }
-    drawSky();
-    drawStadium();
-    drawField();
+    if (!hasBackground) {
+      drawSky();
+      drawStadium();
+      drawField();
+    } else {
+      drawPlayerShadow();
+    }
     drawPlayer();
     drawBalls();
     positionSpeechLine();
@@ -464,94 +622,82 @@
     ctx.beginPath(); ctx.moveTo(0, 427); ctx.lineTo(W, 427); ctx.stroke();
     ctx.fillStyle = '#f4f2d5'; ctx.fillRect(25, 318, 4, 36); ctx.fillRect(W - 29, 318, 4, 36);
     ctx.fillRect(25, 318, 18, 3); ctx.fillRect(W - 43, 318, 18, 3);
-    ctx.fillStyle = '#ffffff20'; ctx.beginPath(); ctx.ellipse(player.x + 9, groundY + 6, 67, 11, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawPlayerShadow() {
+    ctx.fillStyle = '#10210d40';
+    ctx.beginPath();
+    ctx.ellipse(player.x + 5, groundY + 6, PLAYER_SPRITE.displayWidth * .5 + 8, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function getPlayerRenderState() {
+    if (!playerSprite.complete || !playerSprite.naturalWidth) return null;
+    let sprite = playerSprite;
+    let scale = PLAYER_SPRITE.scale;
+    let anchorX = PLAYER_SPRITE.anchorX;
+    let lift = player.jumpHeight;
+
+    if (player.ducking) {
+      if (player.duckWalking) {
+        const frameIndex = Math.floor(player.duckWalkPhase / DUCK_WALK_FRAME_DURATION) % duckWalkSprites.length;
+        sprite = duckWalkSprites[frameIndex];
+        // The supplied frames share a 724px square canvas. Drawing by canvas height
+        // preserves the original proportions and keeps their feet on the field.
+        scale = DUCK_SPRITE.displayHeight / sprite.naturalHeight;
+        anchorX = sprite.naturalWidth * .46;
+      } else {
+        sprite = duckSprite;
+        scale = DUCK_SPRITE.displayHeight / DUCK_SPRITE.height;
+        anchorX = DUCK_SPRITE.anchorX;
+      }
+      lift = 0;
+    } else {
+      const jumpFrame = getJumpFrameIndex(player, JUMP_PREP_DURATION);
+      if (jumpFrame >= 0) {
+        sprite = jumpSprites[jumpFrame];
+        scale = PLAYER_SPRITE.displayHeight * JUMP_FRAME_HEIGHT_RATIOS[jumpFrame] / sprite.naturalHeight;
+        const layout = JUMP_FRAME_LAYOUTS[jumpFrame];
+        anchorX = sprite.naturalWidth * layout.anchorX;
+        lift = player.jumpHeight;
+      } else if (player.walking) {
+        const walkIndex = Math.floor(player.walkPhase / WALK_FRAME_DURATION) % walkSprites.length;
+        const frame = walkSprites[walkIndex];
+        sprite = frame.image;
+        scale = PLAYER_SPRITE.displayHeight / sprite.naturalHeight;
+        anchorX = frame.anchorX ?? sprite.naturalWidth * frame.anchorRatio;
+      }
+    }
+
+    if (!sprite.complete || !sprite.naturalWidth) {
+      if (player.ducking && duckSprite.complete && duckSprite.naturalWidth) {
+        sprite = duckSprite;
+        scale = DUCK_SPRITE.displayHeight / DUCK_SPRITE.height;
+        anchorX = DUCK_SPRITE.anchorX;
+      } else {
+        sprite = playerSprite;
+        scale = PLAYER_SPRITE.scale;
+        anchorX = PLAYER_SPRITE.anchorX;
+      }
+    }
+    const width = sprite.naturalWidth * scale;
+    const height = sprite.naturalHeight * scale;
+    const left = player.x - anchorX * scale;
+    let top = groundY - lift - height;
+    const jumpFrame = sprite === jumpSprites[0] ? 0 : jumpSprites.indexOf(sprite);
+    if (jumpFrame > 0 && jumpFrame < 7 && !JUMP_FRAME_LAYOUTS[jumpFrame].grounded) {
+      const layout = JUMP_FRAME_LAYOUTS[jumpFrame];
+      top = PLAYER_SPRITE.hipScreenY - player.jumpHeight - sprite.naturalHeight * scale * layout.anchorY;
+    }
+    return { sprite, scale, left, top, width, height };
   }
 
   function drawPlayer() {
-    const x = player.x;
-    const anticipation = player.jumpPending ? .68 * (1 - player.jumpPrep / JUMP_PREP_DURATION) : 0;
-    const crouch = Math.max(player.ducking ? 1 : 0, anticipation);
-    const airBend = player.jumpHeight > 0 ? Math.min(.48, player.jumpHeight / 190) : 0;
-    const kneeBend = Math.max(crouch, airBend);
-
-    // Bend at the knees instead of scaling the whole character down.
-    ctx.save();
-    ctx.translate(0, -player.jumpHeight);
-    ctx.strokeStyle = '#d19c76'; ctx.lineWidth = 11; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    for (const side of [-1, 1]) {
-      const hipX = x + side * 12;
-      const kneeX = x + side * 12 + kneeBend * 11;
-      const kneeY = groundY - 19 + kneeBend * 8 - airBend * 4;
-      const ankleX = x + side * 14 - kneeBend * 7;
-      const ankleY = groundY - 4 - airBend * 12;
-      ctx.beginPath(); ctx.moveTo(hipX, groundY - 38); ctx.lineTo(kneeX, kneeY); ctx.lineTo(ankleX, ankleY); ctx.stroke();
-      roundedRect(ankleX - 14, ankleY - 3, 26, 10, 4, '#f5f2e7');
-    }
-    ctx.restore();
-
-    // The upper body leans forward while the knees bend into a grounded squat.
-    const pivotY = groundY - 37;
-    ctx.save();
-    ctx.translate(0, -player.jumpHeight);
-    ctx.translate(x, pivotY);
-    ctx.rotate(crouch * .9);
-    ctx.translate(-x, -pivotY);
-
-    // Bright cyan polo shirt, shaped sleeves, collar, and a small football crest.
-    ctx.fillStyle = '#10afe2';
-    ctx.beginPath();
-    ctx.moveTo(x - 23, groundY - 104); ctx.lineTo(x - 37, groundY - 91);
-    ctx.lineTo(x - 27, groundY - 62); ctx.lineTo(x - 19, groundY - 69);
-    ctx.lineTo(x - 18, groundY - 35); ctx.lineTo(x + 25, groundY - 35);
-    ctx.lineTo(x + 24, groundY - 70); ctx.lineTo(x + 34, groundY - 84);
-    ctx.lineTo(x + 22, groundY - 99); ctx.lineTo(x + 10, groundY - 105);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#eafaff'; ctx.beginPath();
-    ctx.moveTo(x - 5, groundY - 104); ctx.lineTo(x + 2, groundY - 92); ctx.lineTo(x + 9, groundY - 104);
-    ctx.lineTo(x + 4, groundY - 87); ctx.lineTo(x + 1, groundY - 90); ctx.lineTo(x - 2, groundY - 87); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#0887b8'; ctx.fillRect(x + 2, groundY - 87, 2, 35);
-    ctx.fillStyle = '#f5fdff'; ctx.beginPath(); ctx.moveTo(x + 14, groundY - 87); ctx.lineTo(x + 23, groundY - 84); ctx.lineTo(x + 22, groundY - 73); ctx.lineTo(x + 14, groundY - 76); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#173348'; ctx.beginPath(); ctx.moveTo(x + 16, groundY - 85); ctx.lineTo(x + 21, groundY - 83); ctx.lineTo(x + 20, groundY - 77); ctx.lineTo(x + 16, groundY - 79); ctx.closePath(); ctx.fill();
-
-    // Neck and side-profile face, looking toward the baby.
-    ctx.fillStyle = '#c88861'; ctx.fillRect(x - 5, groundY - 119, 17, 20);
-    ctx.fillStyle = '#d9a47f'; ctx.beginPath(); ctx.ellipse(x + 2, groundY - 128, 22, 27, .08, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(x + 17, groundY - 125); ctx.lineTo(x + 28, groundY - 119); ctx.lineTo(x + 18, groundY - 115); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#986849'; ctx.beginPath(); ctx.arc(x - 15, groundY - 124, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#281e1a'; ctx.beginPath(); ctx.ellipse(x + 10, groundY - 129, 2, 2.5, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#694637'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x + 18, groundY - 107); ctx.quadraticCurveTo(x + 7, groundY - 95, x - 7, groundY - 106); ctx.stroke();
-    ctx.fillStyle = '#382820'; ctx.beginPath(); ctx.moveTo(x - 17, groundY - 117); ctx.quadraticCurveTo(x - 2, groundY - 94, x + 13, groundY - 105); ctx.lineTo(x + 7, groundY - 98); ctx.quadraticCurveTo(x - 8, groundY - 94, x - 17, groundY - 108); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#e4d0bd'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x - 16, groundY - 119, 3, 0, Math.PI * 2); ctx.stroke();
-
-    // Backwards black cap: rounded crown, visible opening, strap, and rear-facing brim.
-    ctx.fillStyle = '#12171b'; ctx.beginPath();
-    ctx.moveTo(x - 21, groundY - 131); ctx.lineTo(x - 20, groundY - 145);
-    ctx.quadraticCurveTo(x - 14, groundY - 158, x + 2, groundY - 158);
-    ctx.quadraticCurveTo(x + 19, groundY - 158, x + 23, groundY - 144);
-    ctx.lineTo(x + 17, groundY - 137); ctx.quadraticCurveTo(x + 1, groundY - 145, x - 9, groundY - 136);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#d9a47f'; ctx.beginPath(); ctx.ellipse(x - 10, groundY - 145, 6, 4, -.1, Math.PI, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#050809'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 15, groundY - 143); ctx.quadraticCurveTo(x - 7, groundY - 138, x + 2, groundY - 142); ctx.stroke();
-    ctx.fillStyle = '#090d10'; ctx.beginPath(); ctx.moveTo(x - 18, groundY - 139); ctx.lineTo(x - 37, groundY - 134); ctx.lineTo(x - 34, groundY - 129); ctx.lineTo(x - 15, groundY - 132); ctx.closePath(); ctx.fill();
-
-    // Supporting arm behind the baby, which is carried at the player's side.
-    ctx.strokeStyle = '#d9a47f'; ctx.lineWidth = 11; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(x + 18, groundY - 80); ctx.quadraticCurveTo(x + 27, groundY - 58, x + 48, groundY - 55); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x - 17, groundY - 78); ctx.quadraticCurveTo(x - 14, groundY - 53, x + 10, groundY - 48); ctx.stroke();
-
-    // Baby in a white outfit, held upright beside the torso.
-    ctx.fillStyle = '#fffdf6'; ctx.beginPath();
-    ctx.moveTo(x + 33, groundY - 88); ctx.quadraticCurveTo(x + 48, groundY - 96, x + 63, groundY - 87);
-    ctx.lineTo(x + 72, groundY - 54); ctx.quadraticCurveTo(x + 54, groundY - 43, x + 31, groundY - 54);
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#e8e1d7'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + 34, groundY - 70); ctx.quadraticCurveTo(x + 51, groundY - 64, x + 69, groundY - 70); ctx.stroke();
-    ctx.fillStyle = '#f0ede5'; roundedRect(x + 34, groundY - 51, 16, 18, 6, '#f0ede5'); roundedRect(x + 53, groundY - 51, 16, 18, 6, '#f0ede5');
-    ctx.fillStyle = '#edaa78'; ctx.beginPath(); ctx.ellipse(x + 52, groundY - 116, 23, 26, .08, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#d79769'; ctx.beginPath(); ctx.arc(x + 72, groundY - 116, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#624637'; ctx.beginPath(); ctx.arc(x + 43, groundY - 119, 1.6, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#d48c6c'; ctx.beginPath(); ctx.moveTo(x + 34, groundY - 115); ctx.lineTo(x + 27, groundY - 111); ctx.lineTo(x + 35, groundY - 108); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#d9a47f'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(x + 15, groundY - 51); ctx.quadraticCurveTo(x + 36, groundY - 46, x + 55, groundY - 54); ctx.stroke();
-    ctx.restore();
+    const pose = getPlayerRenderState();
+    if (!pose) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(pose.sprite, pose.left, pose.top, pose.width, pose.height);
+    ctx.imageSmoothingEnabled = true;
   }
 
   function drawBalls() {
@@ -561,12 +707,24 @@
       ctx.fillStyle = `rgba(13, 30, 17, ${ball.lane === 'ground' ? .22 : .13})`;
       ctx.beginPath(); ctx.ellipse(ball.x - 3, groundY - 3, radius * 1.05, ball.lane === 'ground' ? 5 : 3, 0, 0, Math.PI * 2); ctx.fill();
       ctx.save(); ctx.translate(ball.x, ball.y);
-      ctx.fillStyle = '#fffdf3'; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
-      ctx.save();
-      ctx.beginPath(); ctx.arc(0, 0, radius - 0.5, 0, Math.PI * 2); ctx.clip();
-      drawSoccerPattern(radius, ball);
-      ctx.restore();
-      ctx.strokeStyle = '#c9d1c2'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
+      const spin = ((ball.spinAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      const frameIndex = Math.floor(spin / (Math.PI * 2) * ballSprites.length) % ballSprites.length;
+      const sprite = ballSprites[frameIndex];
+      if (sprite.complete && sprite.naturalWidth) {
+        const imageScale = (radius * 2) / Math.max(sprite.naturalWidth, sprite.naturalHeight);
+        const width = sprite.naturalWidth * imageScale;
+        const height = sprite.naturalHeight * imageScale;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(sprite, -width / 2, -height / 2, width, height);
+        ctx.imageSmoothingEnabled = true;
+      } else {
+        ctx.fillStyle = '#fffdf3'; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+        ctx.save();
+        ctx.beginPath(); ctx.arc(0, 0, radius - 0.5, 0, Math.PI * 2); ctx.clip();
+        drawSoccerPattern(radius, ball);
+        ctx.restore();
+        ctx.strokeStyle = '#c9d1c2'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
+      }
       ctx.restore();
       ctx.strokeStyle = `rgba(255,255,238,${.16 + progress * .28})`; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(ball.x + 20, ball.y); ctx.lineTo(ball.x + 43, ball.y - 3); ctx.stroke();
@@ -629,7 +787,14 @@
     ctx.globalAlpha = 1;
   }
 
-  startButton.addEventListener('click', startGame);
+  startButton.addEventListener('click', () => {
+    if (state === 'paused') resumeGame();
+    else if (state === 'error') window.location.reload();
+    else startGame();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pauseGame();
+  });
   window.addEventListener('resize', resize);
   window.visualViewport?.addEventListener('resize', resize);
   window.addEventListener('keydown', (event) => {
@@ -668,7 +833,9 @@
     }
     if (!pointerDucking && Math.abs(deltaX) > 12) {
       const rect = canvas.getBoundingClientRect();
-      player.targetX = clamp(pointerStartPlayerX + deltaX * W / rect.width, 68, W - 140);
+      const [minX, maxX] = getMovementBounds();
+      const worldDelta = deltaX * canvas.width / rect.width / worldScale;
+      player.targetX = clamp(pointerStartPlayerX + worldDelta, minX, maxX);
     }
   });
   const finishCanvasPointer = () => {
